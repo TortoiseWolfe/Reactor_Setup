@@ -3,12 +3,14 @@ set -euo pipefail
 
 #############################################
 # Steampunk Vite + React + Tailwind Setup Script
-# - Overwrites its log file on each run.
-# - Creates a new GitHub repo via gh CLI.
+# - Overwrites steampunk_setup.log on each run.
+# - Creates a new GitHub repo (via gh CLI).
 # - Deploys to GitHub Pages, printing a clear link.
-# - Configures Storybook using PostCSS for Tailwind processing.
-# - Imports "Special Elite" from Google Fonts and adds a steampunk gradient.
-# - Auto-launches Storybook.
+# - Configures Storybook using PostCSS for Tailwind.
+# - Inserts the correct Google Fonts link for “Special Elite”.
+# - Replaces default <title> with $APP_NAME.
+# - Removes ANSI escape codes for a clean console output.
+# - Auto-launches Storybook
 #############################################
 
 # Overwrite log file on each run
@@ -17,7 +19,7 @@ exec > >(tee steampunk_setup.log) 2>&1
 set -x
 
 #############################################
-# 1. Check GitHub CLI installation & authentication
+# 1. Check GH CLI installation & authentication
 #############################################
 if ! command -v gh &> /dev/null; then
   echo "ERROR: GitHub CLI (gh) is not installed or not in PATH."
@@ -34,7 +36,7 @@ fi
 # 2. Load environment variables from .env
 #############################################
 if [ ! -f .env ]; then
-  echo "ERROR: .env file not found! Create a .env file with APP_NAME and GITHUB_ACCOUNT."
+  echo "ERROR: .env file not found! Please create a .env file with APP_NAME and GITHUB_ACCOUNT."
   exit 1
 fi
 
@@ -84,7 +86,7 @@ touch scaffolding.sh
 touch components.txt
 
 #############################################
-# 6. Install core project dependencies
+# 6. Install project dependencies
 #############################################
 echo "Installing project dependencies..."
 npm install
@@ -96,7 +98,17 @@ echo "Installing dev dependencies: Tailwind, PostCSS, Autoprefixer, @tailwindcss
 npm install -D tailwindcss postcss autoprefixer @tailwindcss/postcss gh-pages prettier
 
 #############################################
-# 8. Create PostCSS config for Tailwind (for Storybook & Vite)
+# 7.1 Overwrite default react.svg if custom one exists
+#############################################
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/react.svg" ]; then
+  rm -f src/assets/react.svg
+  cp "$SCRIPT_DIR/react.svg" src/assets/react.svg
+  echo "Custom react.svg found and copied to src/assets, overwriting the default."
+fi
+
+#############################################
+# 8. Create PostCSS config for Tailwind
 #############################################
 cat <<'EOF' > postcss.config.cjs
 module.exports = {
@@ -111,15 +123,13 @@ EOF
 # 9. Create Tailwind CSS entry file
 #############################################
 cat <<'EOF' > src/tailwind.css
-@import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 EOF
 
 #############################################
-# 10. Configure Vite (for app build)
+# 10. Configure Vite
 #############################################
 echo "Writing vite.config.ts..."
 cat <<EOF > vite.config.ts
@@ -134,7 +144,7 @@ export default defineConfig({
 EOF
 
 echo "Writing tailwind.config.js..."
-cat <<EOF > tailwind.config.js
+cat <<'EOF' > tailwind.config.js
 // tailwind.config.js
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -157,6 +167,10 @@ module.exports = {
         arbutus: ['"Arbutus Slab"', 'serif'],
         cinzel:  ['Cinzel', 'serif'],
       },
+      // 1) Increase base font size to make text larger
+      fontSize: {
+        base: '18px'
+      },
     },
   },
   plugins: [],
@@ -164,7 +178,7 @@ module.exports = {
 EOF
 
 #############################################
-# 11. Add global CSS (Tailwind + steampunk styles)
+# 11. Global CSS (Tailwind + steampunk styles)
 #############################################
 echo "Writing src/index.css..."
 cat <<'EOF' > src/index.css
@@ -183,7 +197,7 @@ cat <<'EOF' > src/index.css
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Import compiled Tailwind CSS */
+/* Load Tailwind */
 @import './tailwind.css';
 
 /* Enforce the Special Elite font */
@@ -232,6 +246,7 @@ h1 {
 .logo.react:hover {
   animation-direction: reverse;
 }
+
 @keyframes logo-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -239,7 +254,28 @@ h1 {
 EOF
 
 #############################################
-# 12. Restore your original App.tsx with gradient header
+# 12. Insert <link> in index.html for "Special Elite" & set <title> to $APP_NAME
+#############################################
+if [[ -f index.html ]]; then
+  sed -i '/<title>.*<\/title>/d' index.html
+  tmpfile=$(mktemp)
+  cat <<EOF > "$tmpfile"
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
+<title>$APP_NAME</title>
+EOF
+  sed -i '/<head>/r '"$tmpfile" index.html
+  rm "$tmpfile"
+
+  # 2) Force dark mode by default: add class="dark" to <html> 
+  sed -i 's#<html>#<html class="dark">#' index.html
+else
+  echo "WARNING: index.html not found. Could not insert Google Fonts link or set <title> to $APP_NAME."
+fi
+
+#############################################
+# 13. App.tsx with gradient header
 #############################################
 echo "Writing src/App.tsx..."
 cat <<'EOF' > src/App.tsx
@@ -294,7 +330,7 @@ export default App;
 EOF
 
 #############################################
-# 13. Initialize Git, commit, and create remote repo
+# 14. Initialize Git, commit, create remote repo
 #############################################
 echo "Initializing Git repository..."
 git init
@@ -309,7 +345,7 @@ echo "Creating new GitHub repo via gh CLI (public) and pushing code..."
 gh repo create "$GITHUB_ACCOUNT/$APP_NAME" --public --source=. --remote=origin --push
 
 #############################################
-# 14. Update package.json for GitHub Pages & deploy
+# 15. Update package.json for GitHub Pages & deploy
 #############################################
 echo "Updating package.json scripts for GitHub Pages deployment..."
 node -e "let pkg=require('./package.json'); pkg.scripts.predeploy='npm run build'; pkg.scripts.deploy='gh-pages -d dist'; require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));"
@@ -317,21 +353,18 @@ node -e "let pkg=require('./package.json'); pkg.scripts.predeploy='npm run build
 echo "Deploying to GitHub Pages..."
 npm run deploy
 
-#############################################
-# 15. Print GitHub Pages Link Immediately
-#############################################
 REPO_URL="https://github.com/$GITHUB_ACCOUNT/$APP_NAME"
 DEPLOYED_URL="https://$GITHUB_ACCOUNT.github.io/$APP_NAME/"
 
 echo ""
 echo "============================================================"
 echo "GitHub Repository: $REPO_URL"
-echo -e "Deployed GitHub Pages: \e[1m$DEPLOYED_URL\e[0m"
+echo "Deployed GitHub Pages: $DEPLOYED_URL"
 echo "============================================================"
 echo ""
 
 #############################################
-# 16. Initialize Storybook using PostCSS (Tailwind via postcss.config.cjs)
+# 17. Initialize Storybook
 #############################################
 echo "Initializing Storybook with Vite builder..."
 yes | npx storybook@latest init --builder=vite
@@ -347,9 +380,6 @@ export const parameters = {
 };
 EOF
 
-#############################################
-# 17. Create .storybook/main.js to configure Storybook's Vite without Tailwind plugin
-#############################################
 echo "Writing .storybook/main.js to override Vite base..."
 mkdir -p .storybook
 cat <<'EOF' > .storybook/main.js
