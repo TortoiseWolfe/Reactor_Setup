@@ -8,32 +8,30 @@ set -euo pipefail
 # - Creates a new GitHub repo (via gh CLI).
 # - Deploys to GitHub Pages, printing a clear link.
 # - Configures Storybook using PostCSS for Tailwind.
-# - Inserts the correct Google Fonts links for “Special Elite”, “Arbutus Slab”, and “Cinzel”.
-# - Replaces default <title> with $APP_NAME.
-# - Removes ANSI escape codes for a clean console output.
-# - Auto-launches Storybook
+# - Uses .env for APP_NAME, GITHUB_ACCOUNT, and STEAMPUNK_* variables.
+# - Correctly expands env variables (no literal $APP_NAME in final output!).
+# - Creates custom Storybook stories for Button, Card, and Header.
+# - Auto-launches Storybook.
 #############################################
 #endregion Header - Script Information
 
 #region 0. Initialize Logging
-# Overwrite log file on each run
 rm -f steampunk_setup.log
 exec > >(tee steampunk_setup.log) 2>&1
 set -x
 #endregion 0. Initialize Logging
 
 #region 0.5 Initialize SSH Agent and Add SSH Key
-# Ensure that SSH credentials are loaded to avoid prompts during Git operations.
 if [ -z "${SSH_AUTH_SOCK:-}" ]; then
   echo "Starting ssh-agent..."
   eval "$(ssh-agent -s)"
 fi
-
 if [ -f "$HOME/.ssh/id_rsa" ]; then
   echo "Adding SSH key..."
   ssh-add "$HOME/.ssh/id_rsa"
 else
-  echo "WARNING: SSH key not found at $HOME/.ssh/id_rsa. Please add your SSH key for passwordless Git operations."
+  echo "WARNING: SSH key not found at $HOME/.ssh/id_rsa."
+  echo "Please add your SSH key for passwordless Git operations."
 fi
 #endregion 0.5 Initialize SSH Agent and Add SSH Key
 
@@ -42,7 +40,6 @@ if ! command -v gh &> /dev/null; then
   echo "ERROR: GitHub CLI (gh) is not installed or not in PATH."
   exit 1
 fi
-
 if ! gh auth status &> /dev/null; then
   echo "ERROR: GitHub CLI is installed but you're not authenticated."
   echo "Run 'gh auth login' and follow prompts, then re-run this script."
@@ -52,52 +49,47 @@ fi
 
 #region 2. Load environment variables from .env
 if [ ! -f .env ]; then
-  echo "ERROR: .env file not found! Please create a .env file with APP_NAME and GITHUB_ACCOUNT."
+  echo "ERROR: .env file not found!"
+  echo "Please create a .env file with APP_NAME, GITHUB_ACCOUNT, and STEAMPUNK_* variables."
   exit 1
 fi
-
 set -a
 source .env
 set +a
-
 if [ -z "${APP_NAME:-}" ]; then
   echo "ERROR: APP_NAME variable is not set in .env."
   exit 1
 fi
-
 if [ -z "${GITHUB_ACCOUNT:-}" ]; then
   echo "ERROR: GITHUB_ACCOUNT variable is not set in .env."
   exit 1
 fi
-
 echo "Using application name: $APP_NAME"
 echo "Using GitHub account: $GITHUB_ACCOUNT"
 #endregion 2. Load environment variables from .env
 
 #region 3. If current directory is a Git repo, move up one directory
 if [ -d ".git" ]; then
-  echo "Detected .git folder here. Moving up one directory to create new project in parallel."
+  echo "Detected .git folder here. Moving up one directory..."
   cd ..
 fi
 #endregion 3. If current directory is a Git repo, move up one directory
 
-#region 4. Create new project folder (if it doesn’t exist)
+#region 4. Create new project folder
 if [ -d "$APP_NAME" ]; then
-  echo "ERROR: Directory '$APP_NAME' already exists. Aborting to avoid overwriting."
+  echo "ERROR: Directory '$APP_NAME' already exists. Aborting."
   exit 1
 fi
-
-echo "Creating Vite + React (TypeScript) project in folder: $APP_NAME"
+echo "Creating Vite + React (TypeScript) project: $APP_NAME"
 npm create vite@latest "$APP_NAME" -- --template react-ts
-
 cd "$APP_NAME"
-#endregion 4. Create new project folder (if it doesn’t exist)
+#endregion 4. Create new project folder
 
-#region 5. Create blank files in the project root
+#region 5. Create blank files
 echo "Creating blank files: scaffolding.sh and components.txt..."
 touch scaffolding.sh
 touch components.txt
-#endregion 5. Create blank files in the project root
+#endregion 5. Create blank files
 
 #region 6. Install project dependencies
 echo "Installing project dependencies..."
@@ -109,16 +101,7 @@ echo "Installing dev dependencies: Tailwind, PostCSS, Autoprefixer, @tailwindcss
 npm install -D tailwindcss postcss autoprefixer @tailwindcss/postcss gh-pages prettier
 #endregion 7. Install additional dev dependencies
 
-#region 7.1 Overwrite default react.svg if custom one exists
-# SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# if [ -f "$SCRIPT_DIR/react.svg" ]; then
-#   rm -f src/assets/react.svg
-#   cp "$SCRIPT_DIR/react.svg" src/assets/react.svg
-#   echo "Custom react.svg found and copied to src/assets, overwriting the default."
-# fi
-#endregion 7.1 Overwrite default react.svg if custom one exists
-
-#region 8. Create PostCSS config for Tailwind
+#region 8. Create PostCSS config
 cat <<'EOF' > postcss.config.cjs
 module.exports = {
   plugins: {
@@ -127,17 +110,22 @@ module.exports = {
   },
 };
 EOF
-#endregion 8. Create PostCSS config for Tailwind
+#endregion 8. Create PostCSS config
 
-#region 9. Create Tailwind CSS entry file
+#region 9. Create Tailwind CSS entry
 cat <<'EOF' > src/tailwind.css
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 EOF
-#endregion 9. Create Tailwind CSS entry file
+#endregion 9. Create Tailwind CSS entry
 
-#region 10. Configure Vite and Tailwind
+#
+# For configuration files and HTML, we want expansions so that the environment
+# variables are replaced with actual values.
+#
+
+#region 10. Configure Vite and Tailwind (with expansions)
 echo "Writing vite.config.ts..."
 cat <<EOF > vite.config.ts
 // vite.config.ts
@@ -145,7 +133,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: '/$APP_NAME/',
+  base: '/${APP_NAME}/',
   plugins: [react()],
 });
 EOF
@@ -163,15 +151,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        copper: { DEFAULT: '#B87333', dark: '#A85C22' },
-        bronze: { DEFAULT: '#CD7F32', dark: '#A85C28' },
-        gold:   { DEFAULT: '#D4AF37', dark: '#A67C27' },
-        ivory:  { DEFAULT: '#FFFFF0', dark: '#ECECEC' },
+        copper: { DEFAULT: "${STEAMPUNK_COLOR_PRIMARY}", dark: "#A85C22" },
+        bronze: { DEFAULT: "${STEAMPUNK_COLOR_SECONDARY}", dark: "#A85C28" },
+        gold:   { DEFAULT: "${STEAMPUNK_COLOR_TERTIARY}",  dark: "#A67C27" },
+        ivory:  { DEFAULT: "${STEAMPUNK_COLOR_IVORY}",     dark: "${STEAMPUNK_COLOR_IVORY_DARK}" },
       },
       fontFamily: {
-        special: ['"Special Elite"', 'cursive'],
-        arbutus: ['"Arbutus Slab"', 'serif'],
-        cinzel:  ['Cinzel', 'serif'],
+        special: ["${STEAMPUNK_FONT_PRIMARY}", "cursive"],
+        arbutus: ["${STEAMPUNK_FONT_SECONDARY}", "serif"],
+        cinzel:  ["${STEAMPUNK_FONT_TERTIARY}", "serif"],
       },
       fontSize: {
         base: '18px'
@@ -183,9 +171,9 @@ module.exports = {
 EOF
 #endregion 10. Configure Vite and Tailwind
 
-#region 11. Global CSS (Tailwind + steampunk styles)
-# Ensure @import is the very first statement with no preceding whitespace/comments.
-cat <<'EOF' > src/index.css
+#region 11. Global CSS (with expansions)
+echo "Writing src/index.css..."
+cat <<EOF > src/index.css
 @import './tailwind.css';
 /* Global custom styles */
 :root {
@@ -200,29 +188,29 @@ cat <<'EOF' > src/index.css
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Enforce the Special Elite font */
+/* Enforce the primary font */
 .font-special {
-  font-family: "Special Elite", cursive !important;
+  font-family: "${STEAMPUNK_FONT_PRIMARY}", cursive !important;
 }
 
-/* Enforce the Arbutus Slab font */
+/* Enforce the secondary font */
 .font-arbutus {
-  font-family: "Arbutus Slab", serif !important;
+  font-family: "${STEAMPUNK_FONT_SECONDARY}", serif !important;
 }
 
-/* Enforce the Cinzel font */
+/* Enforce the tertiary font */
 .font-cinzel {
-  font-family: "Cinzel", serif !important;
+  font-family: "${STEAMPUNK_FONT_TERTIARY}", serif !important;
 }
 
 /* Steampunk gradient for headers */
 .steampunk-gradient {
   background: linear-gradient(
     90deg,
-    #B87333 0%,
-    #CD7F32 33%,
-    #D4AF37 66%,
-    #FFFFF0 100%
+    ${STEAMPUNK_COLOR_PRIMARY} 0%,
+    ${STEAMPUNK_COLOR_SECONDARY} 33%,
+    ${STEAMPUNK_COLOR_TERTIARY} 66%,
+    ${STEAMPUNK_COLOR_IVORY} 100%
   );
   -webkit-background-clip: text;
   color: transparent;
@@ -262,9 +250,9 @@ h1 {
   to { transform: rotate(360deg); }
 }
 EOF
-#endregion 11. Global CSS (Tailwind + steampunk styles)
+#endregion 11. Global CSS
 
-#region 12. Insert Google Fonts links and update index.html
+#region 12. Insert Google Fonts links and update index.html (with expansions)
 if [[ -f index.html ]]; then
   sed -i '/<title>.*<\/title>/d' index.html
   tmpfile=$(mktemp)
@@ -274,17 +262,21 @@ if [[ -f index.html ]]; then
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Arbutus+Slab&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel&display=swap" rel="stylesheet">
-<title>$APP_NAME</title>
+<title>${APP_NAME}</title>
 EOF
   sed -i '/<head>/r '"$tmpfile" index.html
   rm "$tmpfile"
   sed -i 's#<html>#<html class="dark">#' index.html
 else
-  echo "WARNING: index.html not found. Could not insert Google Fonts links or set <title> to $APP_NAME."
+  echo "WARNING: index.html not found. Could not insert Google Fonts or set <title>."
 fi
-#endregion 12. Insert Google Fonts links and update index.html
+#endregion 12. Insert Google Fonts links
 
-#region 13. Configure App.tsx with gradient header
+#
+# For code files (TSX), we want no expansions (so we use quoted heredocs).
+#
+
+#region 13. Configure App.tsx (no expansions)
 echo "Writing src/App.tsx..."
 cat <<'EOF' > src/App.tsx
 // src/App.tsx
@@ -336,7 +328,151 @@ function App() {
 
 export default App;
 EOF
-#endregion 13. Configure App.tsx with gradient header
+#endregion 13. Configure App.tsx
+
+#region 13.5 Scaffold Steampunk Components (no expansions)
+echo "Scaffolding steampunk-styled components..."
+
+mkdir -p src/components/{common,layout,ui}
+
+# Button.tsx
+cat <<'EOF' > src/components/ui/Button.tsx
+import React from 'react';
+
+interface ButtonProps {
+  children: React.ReactNode;
+  variant?: 'primary' | 'secondary' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  onClick?: () => void;
+  disabled?: boolean;
+}
+
+export const Button: React.FC<ButtonProps> = ({
+  children,
+  variant = 'primary',
+  size = 'md',
+  onClick,
+  disabled = false,
+}) => {
+  const baseStyles =
+    'font-cinzel rounded-md transition-all duration-200 border-2 flex items-center justify-center';
+  const variantStyles = {
+    primary:
+      'bg-bronze text-ivory border-bronze-dark hover:bg-bronze-dark disabled:bg-bronze/50',
+    secondary:
+      'bg-transparent text-gold border-gold hover:bg-gold/10 disabled:text-gold/50',
+    ghost:
+      'bg-transparent text-copper border-transparent hover:text-copper-dark disabled:text-copper/50',
+  };
+  const sizeStyles = {
+    sm: 'px-3 py-1 text-sm',
+    md: 'px-4 py-2 text-base',
+    lg: 'px-6 py-3 text-lg',
+  };
+
+  return (
+    <button
+      className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  );
+};
+EOF
+
+# Card.tsx
+cat <<'EOF' > src/components/common/Card.tsx
+import React from 'react';
+
+interface CardProps {
+  children: React.ReactNode;
+  title?: string;
+}
+
+export const Card: React.FC<CardProps> = ({ children, title }) => {
+  return (
+    <div className="bg-ivory/10 border-2 border-copper rounded-lg p-6 shadow-lg">
+      {title && (
+        <h2 className="text-2xl font-special text-gold steampunk-gradient mb-4">
+          {title}
+        </h2>
+      )}
+      <div className="text-ivory font-arbutus">{children}</div>
+    </div>
+  );
+};
+EOF
+
+# Header.tsx
+cat <<'EOF' > src/components/layout/Header.tsx
+import React from 'react';
+
+interface HeaderProps {
+  title: string;
+}
+
+export const Header: React.FC<HeaderProps> = ({ title }) => {
+  return (
+    <header className="bg-copper dark:bg-copper-dark py-4 px-6">
+      <h1 className="text-3xl font-special steampunk-gradient text-center">
+        {title}
+      </h1>
+    </header>
+  );
+};
+EOF
+#endregion 13.5 Scaffold Steampunk Components
+
+#region 13.6 Create Custom Stories for Components
+echo "Creating custom Storybook stories for Button, Card, and Header..."
+
+# Button.stories.tsx (React import removed)
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/Button.stories.tsx
+import { Button } from './Button';
+
+export default {
+  title: 'Components/Button',
+  component: Button,
+};
+
+export const Primary = () => <Button variant="primary">Primary Button</Button>;
+export const Secondary = () => <Button variant="secondary">Secondary Button</Button>;
+export const Ghost = () => <Button variant="ghost">Ghost Button</Button>;
+EOF
+
+# Card.stories.tsx (React import removed)
+mkdir -p src/components/common
+cat <<'EOF' > src/components/common/Card.stories.tsx
+import { Card } from './Card';
+
+export default {
+  title: 'Components/Card',
+  component: Card,
+};
+
+export const DefaultCard = () => (
+  <Card title="Card Title">
+    <p>This is some card content.</p>
+  </Card>
+);
+EOF
+
+# Header.stories.tsx (React import removed)
+mkdir -p src/components/layout
+cat <<'EOF' > src/components/layout/Header.stories.tsx
+import { Header } from './Header';
+
+export default {
+  title: 'Components/Header',
+  component: Header,
+};
+
+export const DefaultHeader = () => <Header title="Steampunk Header" />;
+EOF
+#endregion 13.6 Create Custom Stories for Components
 
 #region 14. Initialize Git, commit, create remote repo
 echo "Initializing Git repository..."
@@ -352,13 +488,16 @@ gh repo create "$GITHUB_ACCOUNT/$APP_NAME" --public --source=. --remote=origin -
 
 #region 15. Update package.json for GitHub Pages & deploy
 echo "Updating package.json scripts for GitHub Pages deployment..."
-node -e "let pkg=require('./package.json'); pkg.scripts.predeploy='npm run build'; pkg.scripts.deploy='gh-pages -d dist -f'; require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));"
+node -e "
+let pkg=require('./package.json');
+pkg.scripts.predeploy='npm run build';
+pkg.scripts.deploy='gh-pages -d dist -f';
+require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+"
 echo "Deploying to GitHub Pages..."
 npm run deploy
-
 REPO_URL="https://github.com/$GITHUB_ACCOUNT/$APP_NAME"
 DEPLOYED_URL="https://$GITHUB_ACCOUNT.github.io/$APP_NAME/"
-
 echo ""
 echo "========================================"
 echo "GitHub Repository: $REPO_URL"
@@ -370,7 +509,6 @@ echo ""
 #region 17. Initialize Storybook
 echo "Initializing Storybook with Vite builder..."
 yes | npx storybook@latest init --builder=vite
-
 echo "Writing .storybook/preview.ts..."
 cat <<'EOF' > .storybook/preview.ts
 import '../src/tailwind.css';
@@ -381,9 +519,7 @@ export const parameters = {
   controls: { matchers: { color: /(background|color)$/i, date: /Date$/ } },
 };
 EOF
-
-echo "Writing .storybook/main.js to override Vite base..."
-mkdir -p .storybook
+echo "Writing .storybook/main.js..."
 cat <<'EOF' > .storybook/main.js
 module.exports = {
   stories: ['../src/**/*.stories.@(js|jsx,ts,tsx)'],
@@ -404,6 +540,5 @@ EOF
 echo "Confirming Git status..."
 git status
 echo "Git repository looks good. Auto-launching Storybook..."
-# Run Storybook in the background so the script can finish.
 npm run storybook &
 #endregion 18. Confirm Git status and auto-launch Storybook
