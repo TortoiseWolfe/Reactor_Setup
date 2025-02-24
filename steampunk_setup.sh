@@ -10,7 +10,7 @@ set -euo pipefail
 # - Configures Storybook using PostCSS for Tailwind.
 # - Uses .env for APP_NAME, GITHUB_ACCOUNT, and STEAMPUNK_* variables.
 # - Correctly expands env variables (no literal $APP_NAME in final output!).
-# - Creates custom Storybook stories for Button, Card, and Header.
+# - Creates custom Storybook stories for Button, Card, Header, NavList, and UnorderedList.
 # - Auto-launches Storybook.
 #############################################
 #endregion Header - Script Information
@@ -273,7 +273,7 @@ fi
 #endregion 12. Insert Google Fonts links
 
 #
-# For code files (TSX), we want no expansions (so we use quoted heredocs).
+# For code files (TSX), we want no expansions so we use quoted heredocs.
 #
 
 #region 13. Configure App.tsx (no expansions)
@@ -283,11 +283,17 @@ cat <<'EOF' > src/App.tsx
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import viteLogo from "/vite.svg";
+import { NavList } from "./components/ui/NavList";
+import { UnorderedList } from "./components/ui/UnorderedList";
 import "./App.css";
 import "./index.css";
 
 function App() {
   const [count, setCount] = useState(0);
+  const [activeNav, setActiveNav] = useState(0);
+  const [activeUnordered, setActiveUnordered] = useState(0);
+  const navItems = ["Home", "About", "Services", "Contact"];
+  const unorderedItems = ["Item 1", "Item 2", "Item 3", "Item 4"];
 
   return (
     <>
@@ -301,6 +307,10 @@ function App() {
         <p className="mt-4 text-bronze dark:text-bronze-dark">
           Using Cinzel → <span className="font-cinzel">Classical vibes</span>
         </p>
+        {/* Render NavList with active item highlighting */}
+        <NavList items={navItems} activeIndex={activeNav} onItemClick={(i) => setActiveNav(i)} />
+        {/* Render UnorderedList with selected item highlighting */}
+        <UnorderedList items={unorderedItems} activeIndex={activeUnordered} onItemClick={(i) => setActiveUnordered(i)} />
         <div className="flex items-center justify-center gap-6 mt-6">
           <a href="https://vite.dev" target="_blank">
             <img src={viteLogo} className="logo" alt="Vite logo" />
@@ -332,7 +342,6 @@ EOF
 
 #region 13.5 Scaffold Steampunk Components (no expansions)
 echo "Scaffolding steampunk-styled components..."
-
 mkdir -p src/components/{common,layout,ui}
 
 # Button.tsx
@@ -428,7 +437,7 @@ EOF
 #region 13.6 Create Custom Stories for Components
 echo "Creating custom Storybook stories for Button, Card, and Header..."
 
-# Button.stories.tsx (React import removed)
+# Button.stories.tsx
 mkdir -p src/components/ui
 cat <<'EOF' > src/components/ui/Button.stories.tsx
 import { Button } from './Button';
@@ -443,7 +452,7 @@ export const Secondary = () => <Button variant="secondary">Secondary Button</But
 export const Ghost = () => <Button variant="ghost">Ghost Button</Button>;
 EOF
 
-# Card.stories.tsx (React import removed)
+# Card.stories.tsx
 mkdir -p src/components/common
 cat <<'EOF' > src/components/common/Card.stories.tsx
 import { Card } from './Card';
@@ -460,7 +469,7 @@ export const DefaultCard = () => (
 );
 EOF
 
-# Header.stories.tsx (React import removed)
+# Header.stories.tsx
 mkdir -p src/components/layout
 cat <<'EOF' > src/components/layout/Header.stories.tsx
 import { Header } from './Header';
@@ -473,6 +482,106 @@ export default {
 export const DefaultHeader = () => <Header title="Steampunk Header" />;
 EOF
 #endregion 13.6 Create Custom Stories for Components
+
+#region 13.7 Scaffold Additional Custom Component: NavList
+echo "Scaffolding additional custom component: NavList..."
+
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/NavList.tsx
+import React from 'react';
+
+interface NavListProps {
+  items: string[];
+  activeIndex: number;
+  onItemClick?: (index: number) => void;
+}
+
+export const NavList: React.FC<NavListProps> = ({ items, activeIndex, onItemClick }) => {
+  return (
+    <ul className="list-disc pl-5">
+      {items.map((item, index) => (
+        <li
+          key={index}
+          className={`cursor-pointer ${index === activeIndex ? 'text-gold font-bold' : 'text-ivory'}`}
+          onClick={() => onItemClick && onItemClick(index)}
+        >
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+};
+EOF
+#endregion 13.7 Scaffold Additional Custom Component: NavList
+
+#region 13.8 Create Custom Story for NavList
+echo "Creating custom Storybook story for NavList..."
+
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/NavList.stories.tsx
+import { NavList } from './NavList';
+
+export default {
+  title: 'Components/NavList',
+  component: NavList,
+};
+
+export const DefaultNavList = () => {
+  const items = ['Home', 'About', 'Services', 'Contact'];
+  return <NavList items={items} activeIndex={0} onItemClick={(index) => alert('Clicked item ' + index)} />;
+};
+EOF
+#endregion 13.8 Create Custom Story for NavList
+
+#region 13.9 Scaffold Additional Custom Component: UnorderedList
+echo "Scaffolding additional custom component: UnorderedList..."
+
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/UnorderedList.tsx
+import React from 'react';
+
+interface UnorderedListProps {
+  items: string[];
+  activeIndex: number;
+  onItemClick?: (index: number) => void;
+}
+
+export const UnorderedList: React.FC<UnorderedListProps> = ({ items, activeIndex, onItemClick }) => {
+  return (
+    <ul className="list-disc pl-5">
+      {items.map((item, index) => (
+        <li
+          key={index}
+          className={`cursor-pointer ${index === activeIndex ? 'text-gold font-bold' : 'text-ivory'}`}
+          onClick={() => onItemClick && onItemClick(index)}
+        >
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+};
+EOF
+#endregion 13.9 Scaffold Additional Custom Component: UnorderedList
+
+#region 13.10 Create Custom Story for UnorderedList
+echo "Creating custom Storybook story for UnorderedList..."
+
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/UnorderedList.stories.tsx
+import { UnorderedList } from './UnorderedList';
+
+export default {
+  title: 'Components/UnorderedList',
+  component: UnorderedList,
+};
+
+export const DefaultUnorderedList = () => {
+  const items = ['Item 1', 'Item 2', 'Item 3', 'Item 4'];
+  return <UnorderedList items={items} activeIndex={1} onItemClick={(index) => alert('Clicked item ' + index)} />;
+};
+EOF
+#endregion 13.10 Create Custom Story for UnorderedList
 
 #region 14. Initialize Git, commit, create remote repo
 echo "Initializing Git repository..."
