@@ -10,7 +10,10 @@ set -euo pipefail
 # - Configures Storybook using PostCSS for Tailwind.
 # - Uses .env for APP_NAME, GITHUB_ACCOUNT, and STEAMPUNK_* variables.
 # - Correctly expands env variables (no literal $APP_NAME in final output!).
-# - Creates custom Storybook stories for Button, Card, Header, NavList, UnorderedList, and Link.
+# - Creates custom Storybook stories for:
+#   Button, Card, Header, NavList, UnorderedList, Link, TriviaCard, ScoreBoard.
+# - TriviaCard now includes 20 questions, supports forward/back navigation,
+#   shows only one question at a time, and keeps score of correct answers.
 # - Auto-launches Storybook.
 #############################################
 #endregion Header - Script Information
@@ -40,6 +43,7 @@ if ! command -v gh &> /dev/null; then
   echo "ERROR: GitHub CLI (gh) is not installed or not in PATH."
   exit 1
 fi
+
 if ! gh auth status &> /dev/null; then
   echo "ERROR: GitHub CLI is installed but you're not authenticated."
   echo "Run 'gh auth login' and follow prompts, then re-run this script."
@@ -53,17 +57,21 @@ if [ ! -f .env ]; then
   echo "Please create a .env file with APP_NAME, GITHUB_ACCOUNT, and STEAMPUNK_* variables."
   exit 1
 fi
+
 set -a
 source .env
 set +a
+
 if [ -z "${APP_NAME:-}" ]; then
   echo "ERROR: APP_NAME variable is not set in .env."
   exit 1
 fi
+
 if [ -z "${GITHUB_ACCOUNT:-}" ]; then
   echo "ERROR: GITHUB_ACCOUNT variable is not set in .env."
   exit 1
 fi
+
 echo "Using application name: $APP_NAME"
 echo "Using GitHub account: $GITHUB_ACCOUNT"
 #endregion 2. Load environment variables from .env
@@ -80,8 +88,10 @@ if [ -d "$APP_NAME" ]; then
   echo "ERROR: Directory '$APP_NAME' already exists. Aborting."
   exit 1
 fi
+
 echo "Creating Vite + React (TypeScript) project: $APP_NAME"
 npm create vite@latest "$APP_NAME" -- --template react-ts
+
 cd "$APP_NAME"
 #endregion 4. Create new project folder
 
@@ -121,7 +131,7 @@ EOF
 #endregion 9. Create Tailwind CSS entry
 
 #
-# For configuration files and HTML, we want expansions so that the environment
+# For configuration files and HTML, we DO want expansions so that environment
 # variables are replaced with actual values.
 #
 
@@ -255,6 +265,7 @@ EOF
 #region 12. Insert Google Fonts links and update index.html (with expansions)
 if [[ -f index.html ]]; then
   sed -i '/<title>.*<\/title>/d' index.html
+
   tmpfile=$(mktemp)
   cat <<EOF > "$tmpfile"
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -264,6 +275,7 @@ if [[ -f index.html ]]; then
 <link href="https://fonts.googleapis.com/css2?family=Cinzel&display=swap" rel="stylesheet">
 <title>${APP_NAME}</title>
 EOF
+
   sed -i '/<head>/r '"$tmpfile" index.html
   rm "$tmpfile"
   sed -i 's#<html>#<html class="dark">#' index.html
@@ -273,10 +285,11 @@ fi
 #endregion 12. Insert Google Fonts links
 
 #
-# For code files (TSX), we want no expansions so we use quoted heredocs.
+# For code files (TSX), we do NOT want expansions, so we use quoted heredocs.
+# That way, $variables remain as typed in the code (like $GITHUB_ACCOUNT).
 #
 
-#region 13. Configure App.tsx (use unquoted heredoc for expansion of repo URL)
+#region 13. Configure App.tsx
 echo "Writing src/App.tsx..."
 cat <<EOF > src/App.tsx
 // src/App.tsx
@@ -286,6 +299,7 @@ import viteLogo from "/vite.svg";
 import { NavList } from "./components/ui/NavList";
 import { UnorderedList } from "./components/ui/UnorderedList";
 import { Link } from "./components/ui/Link";
+import { TriviaCard } from "./components/TriviaCard";
 import "./App.css";
 import "./index.css";
 
@@ -299,6 +313,9 @@ function App() {
 
   return (
     <>
+      {/* Render TriviaCard at the top */}
+      <TriviaCard />
+      {/* Existing demo content */}
       <div className="bg-copper dark:bg-copper-dark p-6 flex flex-col items-center justify-center text-center">
         <h1 className="text-4xl font-special steampunk-gradient">
           Steampunk Vite App
@@ -516,7 +533,7 @@ export default {
   component: Link,
 };
 
-export const DefaultLink = () => <Link href="https://github.com/TortoiseWolfe/retro-futurism-react-app">View Repository on GitHub</Link>;
+export const DefaultLink = () => <Link href="https://github.com/${GITHUB_ACCOUNT}/${APP_NAME}">View Repository on GitHub</Link>;
 EOF
 #endregion 13.6 Create Custom Stories for Components
 
@@ -620,6 +637,247 @@ export const DefaultUnorderedList = () => {
 EOF
 #endregion 13.10 Create Custom Story for UnorderedList
 
+#region 13.11 Scaffold TriviaCard Component
+echo "Scaffolding TriviaCard component..."
+
+mkdir -p src/components
+cat <<'EOF' > src/components/TriviaCard.tsx
+import React, { useState } from 'react';
+import { Card } from './common/Card';
+import { UnorderedList } from './ui/UnorderedList';
+import { Button } from './ui/Button';
+import { ScoreBoard } from './ui/ScoreBoard';
+
+// We'll store an array of 20 questions
+const TRIVIA_QUESTIONS = [
+  {
+    question: "What is the capital of France?",
+    answers: ["Paris", "London", "Berlin", "Rome"],
+    correctIndex: 0,
+  },
+  {
+    question: "Which planet is known as the Red Planet?",
+    answers: ["Mars", "Venus", "Jupiter", "Saturn"],
+    correctIndex: 0,
+  },
+  {
+    question: "Who wrote 'To Kill a Mockingbird'?",
+    answers: ["Harper Lee", "Mark Twain", "J.K. Rowling", "Ernest Hemingway"],
+    correctIndex: 0,
+  },
+  {
+    question: "What is the largest mammal in the world?",
+    answers: ["Elephant", "Blue Whale", "Giraffe", "Polar Bear"],
+    correctIndex: 1,
+  },
+  {
+    question: "Which country is home to the kangaroo?",
+    answers: ["Australia", "Canada", "Brazil", "South Africa"],
+    correctIndex: 0,
+  },
+  {
+    question: "Which gas is most abundant in the Earth's atmosphere?",
+    answers: ["Oxygen", "Nitrogen", "Carbon Dioxide", "Argon"],
+    correctIndex: 1,
+  },
+  {
+    question: "Who painted the Mona Lisa?",
+    answers: ["Leonardo da Vinci", "Pablo Picasso", "Vincent van Gogh", "Michelangelo"],
+    correctIndex: 0,
+  },
+  {
+    question: "Which language has the most native speakers?",
+    answers: ["English", "Spanish", "Mandarin Chinese", "Hindi"],
+    correctIndex: 2,
+  },
+  {
+    question: "What is the largest continent on Earth?",
+    answers: ["Africa", "Asia", "North America", "Antarctica"],
+    correctIndex: 1,
+  },
+  {
+    question: "Which metal is liquid at room temperature?",
+    answers: ["Iron", "Mercury", "Copper", "Silver"],
+    correctIndex: 1,
+  },
+  {
+    question: "What is the tallest mountain in the world?",
+    answers: ["K2", "Kilimanjaro", "Everest", "Denali"],
+    correctIndex: 2,
+  },
+  {
+    question: "Which ocean is the largest?",
+    answers: ["Atlantic", "Pacific", "Indian", "Arctic"],
+    correctIndex: 1,
+  },
+  {
+    question: "Which country hosted the 2016 Summer Olympics?",
+    answers: ["China", "Brazil", "Greece", "Japan"],
+    correctIndex: 1,
+  },
+  {
+    question: "What is the hardest natural substance on Earth?",
+    answers: ["Gold", "Iron", "Diamond", "Quartz"],
+    correctIndex: 2,
+  },
+  {
+    question: "Who developed the theory of relativity?",
+    answers: ["Isaac Newton", "Albert Einstein", "Nikola Tesla", "Stephen Hawking"],
+    correctIndex: 1,
+  },
+  {
+    question: "Which country is both in Europe and Asia?",
+    answers: ["Spain", "Turkey", "Russia", "Greece"],
+    correctIndex: 1,
+  },
+  {
+    question: "Which instrument measures earthquakes?",
+    answers: ["Thermometer", "Seismograph", "Barometer", "Anemometer"],
+    correctIndex: 1,
+  },
+  {
+    question: "Which planet is closest to the Sun?",
+    answers: ["Venus", "Earth", "Mercury", "Mars"],
+    correctIndex: 2,
+  },
+  {
+    question: "Which ocean is located at the North Pole?",
+    answers: ["Atlantic", "Indian", "Pacific", "Arctic"],
+    correctIndex: 3,
+  },
+  {
+    question: "What is the largest animal on land?",
+    answers: ["Elephant", "Hippopotamus", "Giraffe", "Rhinoceros"],
+    correctIndex: 0,
+  },
+];
+
+export const TriviaCard: React.FC = () => {
+  // We'll store the current question index, and an array of selected answers
+  const [questionIndex, setQuestionIndex] = useState<number>(0);
+  const [selectedAnswers, setSelectedAnswers] = useState<number[]>(
+    Array(TRIVIA_QUESTIONS.length).fill(-1)
+  );
+
+  // Calculate score on the fly: number of correct answers so far
+  const score = selectedAnswers.reduce((acc, ans, idx) => {
+    if (ans === TRIVIA_QUESTIONS[idx].correctIndex) {
+      return acc + 1;
+    }
+    return acc;
+  }, 0);
+
+  const currentQuestion = TRIVIA_QUESTIONS[questionIndex];
+
+  // Move to the next question (if not at the end)
+  const handleNext = () => {
+    if (questionIndex < TRIVIA_QUESTIONS.length - 1) {
+      setQuestionIndex(questionIndex + 1);
+    } else {
+      console.log("Reached the last question");
+    }
+  };
+
+  // Move to the previous question (if not at the beginning)
+  const handlePrevious = () => {
+    if (questionIndex > 0) {
+      setQuestionIndex(questionIndex - 1);
+    } else {
+      console.log("Already at the first question");
+    }
+  };
+
+  // Handle the user selecting an answer
+  const handleSelect = (choiceIndex: number) => {
+    const newSelected = [...selectedAnswers];
+    newSelected[questionIndex] = choiceIndex;
+    setSelectedAnswers(newSelected);
+  };
+
+  return (
+    <Card title="Trivia Questions">
+      {/* ScoreBoard at the top */}
+      <ScoreBoard score={score} />
+
+      <p className="mb-2">
+        <strong>Question {questionIndex + 1} of {TRIVIA_QUESTIONS.length}:</strong>
+      </p>
+
+      <p className="mb-4">{currentQuestion.question}</p>
+
+      <UnorderedList
+        items={currentQuestion.answers}
+        activeIndex={selectedAnswers[questionIndex]}
+        onItemClick={handleSelect}
+      />
+
+      <div className="mt-6 flex justify-center gap-4">
+        <Button variant="secondary" onClick={handlePrevious}>
+          Previous
+        </Button>
+        <Button variant="primary" onClick={handleNext}>
+          Next
+        </Button>
+      </div>
+    </Card>
+  );
+};
+EOF
+#endregion 13.11 Scaffold TriviaCard Component
+
+#region 13.12 Scaffold ScoreBoard Component
+echo "Scaffolding ScoreBoard component..."
+
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/ScoreBoard.tsx
+import React from 'react';
+
+interface ScoreBoardProps {
+  score: number;
+}
+
+export const ScoreBoard: React.FC<ScoreBoardProps> = ({ score }) => {
+  return (
+    <div className="mb-4 p-2 bg-gray-800 text-white rounded shadow">
+      <h2 className="text-xl font-bold">Score: {score}</h2>
+    </div>
+  );
+};
+EOF
+#endregion 13.12 Scaffold ScoreBoard Component
+
+#region 13.13 Create Custom Story for ScoreBoard
+echo "Creating custom Storybook story for ScoreBoard..."
+
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/ScoreBoard.stories.tsx
+import { ScoreBoard } from './ScoreBoard';
+
+export default {
+  title: 'Components/ScoreBoard',
+  component: ScoreBoard,
+};
+
+export const DefaultScoreBoard = () => <ScoreBoard score={5} />;
+EOF
+#endregion 13.13 Create Custom Story for ScoreBoard
+
+#region 13.14 Create Custom Story for TriviaCard
+echo "Creating custom Storybook story for TriviaCard..."
+
+mkdir -p src/components
+cat <<'EOF' > src/components/TriviaCard.stories.tsx
+import { TriviaCard } from './TriviaCard';
+
+export default {
+  title: 'Components/TriviaCard',
+  component: TriviaCard,
+};
+
+export const DefaultTriviaCard = () => <TriviaCard />;
+EOF
+#endregion 13.14 Create Custom Story for TriviaCard
+
 #region 14. Initialize Git, commit, create remote repo
 echo "Initializing Git repository..."
 git init
@@ -642,8 +900,10 @@ require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
 "
 echo "Deploying to GitHub Pages..."
 npm run deploy
+
 REPO_URL="https://github.com/$GITHUB_ACCOUNT/$APP_NAME"
 DEPLOYED_URL="https://$GITHUB_ACCOUNT.github.io/$APP_NAME/"
+
 echo ""
 echo "========================================"
 echo "GitHub Repository: $REPO_URL"
@@ -655,6 +915,7 @@ echo ""
 #region 17. Initialize Storybook
 echo "Initializing Storybook with Vite builder..."
 yes | npx storybook@latest init --builder=vite
+
 echo "Writing .storybook/preview.ts..."
 cat <<'EOF' > .storybook/preview.ts
 import '../src/tailwind.css';
@@ -665,6 +926,7 @@ export const parameters = {
   controls: { matchers: { color: /(background|color)$/i, date: /Date$/ } },
 };
 EOF
+
 echo "Writing .storybook/main.js..."
 cat <<'EOF' > .storybook/main.js
 module.exports = {
