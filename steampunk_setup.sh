@@ -10,7 +10,7 @@ set -euo pipefail
 # - Configures Storybook using PostCSS for Tailwind.
 # - Uses .env for APP_NAME, GITHUB_ACCOUNT, and STEAMPUNK_* variables.
 # - Correctly expands env variables (no literal $APP_NAME in final output!).
-# - Creates custom Storybook stories for Button, Card, Header, NavList, and UnorderedList.
+# - Creates custom Storybook stories for Button, Card, Header, NavList, UnorderedList, and Link.
 # - Auto-launches Storybook.
 #############################################
 #endregion Header - Script Information
@@ -276,15 +276,16 @@ fi
 # For code files (TSX), we want no expansions so we use quoted heredocs.
 #
 
-#region 13. Configure App.tsx (no expansions)
+#region 13. Configure App.tsx (use unquoted heredoc for expansion of repo URL)
 echo "Writing src/App.tsx..."
-cat <<'EOF' > src/App.tsx
+cat <<EOF > src/App.tsx
 // src/App.tsx
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import viteLogo from "/vite.svg";
 import { NavList } from "./components/ui/NavList";
 import { UnorderedList } from "./components/ui/UnorderedList";
+import { Link } from "./components/ui/Link";
 import "./App.css";
 import "./index.css";
 
@@ -294,6 +295,7 @@ function App() {
   const [activeUnordered, setActiveUnordered] = useState(0);
   const navItems = ["Home", "About", "Services", "Contact"];
   const unorderedItems = ["Item 1", "Item 2", "Item 3", "Item 4"];
+  const repoUrl = "https://github.com/${GITHUB_ACCOUNT}/${APP_NAME}";
 
   return (
     <>
@@ -311,6 +313,9 @@ function App() {
         <NavList items={navItems} activeIndex={activeNav} onItemClick={(i) => setActiveNav(i)} />
         {/* Render UnorderedList with selected item highlighting */}
         <UnorderedList items={unorderedItems} activeIndex={activeUnordered} onItemClick={(i) => setActiveUnordered(i)} />
+        <div className="mt-4">
+          <Link href={repoUrl}>View Repository on GitHub</Link>
+        </div>
         <div className="flex items-center justify-center gap-6 mt-6">
           <a href="https://vite.dev" target="_blank">
             <img src={viteLogo} className="logo" alt="Vite logo" />
@@ -432,10 +437,29 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
   );
 };
 EOF
+
+# Link.tsx
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/Link.tsx
+import React from 'react';
+
+interface LinkProps {
+  href: string;
+  children: React.ReactNode;
+}
+
+export const Link: React.FC<LinkProps> = ({ href, children }) => {
+  return (
+    <a href={href} className="text-blue-500 hover:underline" target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+};
+EOF
 #endregion 13.5 Scaffold Steampunk Components
 
 #region 13.6 Create Custom Stories for Components
-echo "Creating custom Storybook stories for Button, Card, and Header..."
+echo "Creating custom Storybook stories for Button, Card, Header, and Link..."
 
 # Button.stories.tsx
 mkdir -p src/components/ui
@@ -480,6 +504,19 @@ export default {
 };
 
 export const DefaultHeader = () => <Header title="Steampunk Header" />;
+EOF
+
+# Link.stories.tsx
+mkdir -p src/components/ui
+cat <<'EOF' > src/components/ui/Link.stories.tsx
+import { Link } from './Link';
+
+export default {
+  title: 'Components/Link',
+  component: Link,
+};
+
+export const DefaultLink = () => <Link href="https://github.com/TortoiseWolfe/retro-futurism-react-app">View Repository on GitHub</Link>;
 EOF
 #endregion 13.6 Create Custom Stories for Components
 
